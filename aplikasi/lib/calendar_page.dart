@@ -1,6 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:table_calendar/table_calendar.dart';
 
 class CalendarPage extends StatefulWidget {
@@ -18,49 +18,64 @@ class _CalendarPageState extends State<CalendarPage> {
   Map<DateTime, List<String>> _events = {};
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  bool _loading = false;
+  bool _loadingHpht = false;
+  bool _loadingSchedule = false;
 
-  /// Ambil HPHT user dari backend
+  final String baseUrl = "http://127.0.0.1:9000";
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCalendar();
+  }
+
+  Future<void> _initializeCalendar() async {
+    setState(() {
+      _loadingHpht = true;
+      _loadingSchedule = true;
+    });
+
+    await Future.wait([
+      _loadUserHpht(),
+      Future.delayed(const Duration(milliseconds: 200))
+    ]);
+  }
+
   Future<void> _loadUserHpht() async {
-    setState(() => _loading = true);
-    final url = Uri.parse("http://127.0.0.1:9000/auth/profile/${widget.userId}");
     try {
-      final resp = await http.get(url);
+      final resp = await http.get(Uri.parse("$baseUrl/profile/${widget.userId}"));
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
-        if (data["hptp"] != null && data["hptp"].toString().isNotEmpty) {
-          setState(() {
-            _selectedHpht = DateTime.parse(data["hptp"]);
-          });
+        final hphtStr = data["user"]["hptp"];
+        if (hphtStr != null && hphtStr.isNotEmpty) {
+          _selectedHpht = DateTime.tryParse(hphtStr);
           await _fetchCalendar();
-        } else {
-          setState(() => _loading = false);
         }
       } else {
         debugPrint("Gagal ambil profile: ${resp.body}");
-        setState(() => _loading = false);
       }
     } catch (e) {
-      debugPrint("Error ambil HPHT: $e");
-      setState(() => _loading = false);
+      debugPrint("❌ Error ambil HPHT: $e");
+    } finally {
+      setState(() => _loadingHpht = false);
     }
   }
 
-  /// Ambil jadwal dari backend
   Future<void> _fetchCalendar() async {
     if (_selectedHpht == null) return;
-
-    setState(() => _loading = true);
-    final url = Uri.parse(
-        "http://127.0.0.1:9000/calendar/schedule?hpht=${_selectedHpht!.toIso8601String().split('T')[0]}");
+    setState(() => _loadingSchedule = true);
 
     try {
+      final url = Uri.parse(
+        "$baseUrl/calendar/schedule?hpht=${_selectedHpht!.toIso8601String().split('T')[0]}",
+      );
       final resp = await http.get(url);
+
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body);
         final schedule = List<Map<String, dynamic>>.from(data["schedule"]);
 
-        Map<DateTime, List<String>> events = {};
+        final Map<DateTime, List<String>> events = {};
         for (var item in schedule) {
           final date = DateTime.parse(item["tanggal"]);
           final key = DateTime(date.year, date.month, date.day);
@@ -72,25 +87,17 @@ class _CalendarPageState extends State<CalendarPage> {
           _edd = data["edd"];
           _schedule = schedule;
           _events = events;
-          _loading = false;
         });
       } else {
-        setState(() => _loading = false);
-        debugPrint("Gagal fetch kalender: ${resp.body}");
+        debugPrint("❌ Gagal fetch calendar: ${resp.body}");
       }
     } catch (e) {
-      debugPrint("Error: $e");
-      setState(() => _loading = false);
+      debugPrint("❌ Error fetch calendar: $e");
+    } finally {
+      setState(() => _loadingSchedule = false);
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadUserHpht();
-  }
-
-  /// Hitung progress kehamilan berdasarkan tanggal hari ini
   double _calculateProgress() {
     if (_selectedHpht == null || _schedule.isEmpty) return 0;
     final today = DateTime.now();
@@ -106,159 +113,202 @@ class _CalendarPageState extends State<CalendarPage> {
     final progress = _calculateProgress();
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FB),
       appBar: AppBar(
         title: const Text("📅 Kalender Kehamilan"),
         backgroundColor: Colors.teal,
+        elevation: 0,
       ),
-      body: _loading
+      body: _loadingHpht
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // Info HPHT
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _selectedHpht == null
-                            ? "HPHT belum diisi"
-                            : "HPHT: ${_selectedHpht!.toLocal().toString().split(' ')[0]}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      if (_edd != null)
-                        Text(
-                          "Perkiraan Persalinan: $_edd",
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, color: Colors.teal),
-                        ),
-                    ],
+          : _selectedHpht == null
+              ? const Center(
+                  child: Text(
+                    "⚠️ Belum ada data HPHT. Silakan hubungi petugas untuk mengisi data awal.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Kalender dengan event
-                  if (_selectedHpht != null)
-                    TableCalendar(
-                      focusedDay: _focusedDay,
-                      firstDay: DateTime(2020),
-                      lastDay: DateTime(2100),
-                      selectedDayPredicate: (day) =>
-                          isSameDay(_selectedDay, day),
-                      eventLoader: (day) =>
-                          _events[DateTime(day.year, day.month, day.day)] ?? [],
-                      calendarStyle: const CalendarStyle(
-                        todayDecoration: BoxDecoration(
-                            color: Colors.orange, shape: BoxShape.circle),
-                        selectedDecoration: BoxDecoration(
-                            color: Colors.teal, shape: BoxShape.circle),
-                      ),
-                      onDaySelected: (selectedDay, focusedDay) {
-                        setState(() {
-                          _selectedDay = selectedDay;
-                          _focusedDay = focusedDay;
-                        });
-
-                        final events = _events[
-                            DateTime(selectedDay.year, selectedDay.month, selectedDay.day)] ?? [];
-
-                        if (events.isNotEmpty) {
-                          // Popup kecil menampilkan event
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: Text("Kegiatan ${selectedDay.day}-${selectedDay.month}"),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: events
-                                    .map((e) => ListTile(
-                                          leading: const Icon(Icons.event_note, color: Colors.teal),
-                                          title: Text(e),
-                                        ))
-                                    .toList(),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text("Tutup"),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-                      },
-                      calendarBuilders: CalendarBuilders(
-                        markerBuilder: (context, date, events) {
-                          if (events.isNotEmpty) {
-                            return Positioned(
-                              bottom: 1,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: events
-                                    .map((e) => Container(
-                                          margin: const EdgeInsets.symmetric(horizontal: 1),
-                                          width: 6,
-                                          height: 6,
-                                          decoration: const BoxDecoration(
-                                            color: Colors.teal,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ))
-                                    .toList(),
-                              ),
-                            );
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-
-                  const SizedBox(height: 16),
-
-                  // Progress keseluruhan
-                  Row(
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Expanded(
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor: Colors.grey[300],
-                          color: Colors.teal,
-                          minHeight: 10,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text("${(progress * 100).toStringAsFixed(1)}%"),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Scrollable list semua jadwal
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _schedule.length,
-                      itemBuilder: (ctx, i) {
-                        final item = _schedule[i];
-                        final date = DateTime.parse(item["tanggal"]);
-                        final isDone = date.isBefore(DateTime.now()) || date.isAtSameMomentAs(DateTime.now());
-                        return Card(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          elevation: 2,
-                          child: ListTile(
-                            leading: Icon(
-                              isDone ? Icons.check_circle : Icons.pending,
-                              color: isDone ? Colors.teal : Colors.orange,
-                            ),
-                            title: Text(item["kegiatan"]),
-                            subtitle: Text(item["tanggal"]),
+                      // 📌 Card Informasi Kehamilan
+                      Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 4,
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text("📆 Tanggal HPHT",
+                                          style: TextStyle(color: Colors.grey)),
+                                      Text(
+                                        _selectedHpht!.toLocal().toString().split(' ')[0],
+                                        style: const TextStyle(
+                                            fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                  if (_edd != null)
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        const Text("🍼 Perkiraan Persalinan",
+                                            style: TextStyle(color: Colors.grey)),
+                                        Text(
+                                          _edd!,
+                                          style: const TextStyle(
+                                              fontSize: 20, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              LinearProgressIndicator(
+                                value: progress,
+                                minHeight: 12,
+                                borderRadius: BorderRadius.circular(8),
+                                backgroundColor: Colors.grey[300],
+                                color: Colors.teal,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                "📈 Perjalanan Kehamilan: ${(progress * 100).toStringAsFixed(1)}%",
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                              ),
+                            ],
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // 📅 Kalender (tinggi tetap agar tidak ketimpa)
+                      SizedBox(
+                        height: 430, // ✅ Tinggi kalender diatur supaya tanggal tidak ketutup
+                        child: Card(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 3,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: TableCalendar(
+                              focusedDay: _focusedDay,
+                              firstDay: DateTime(2020),
+                              lastDay: DateTime(2100),
+                              selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                              eventLoader: (day) =>
+                                  _events[DateTime(day.year, day.month, day.day)] ?? [],
+                              calendarStyle: const CalendarStyle(
+                                todayDecoration: BoxDecoration(
+                                  color: Colors.orange,
+                                  shape: BoxShape.circle,
+                                ),
+                                selectedDecoration: BoxDecoration(
+                                  color: Colors.teal,
+                                  shape: BoxShape.circle,
+                                ),
+                                markersMaxCount: 3,
+                                markerDecoration: BoxDecoration(
+                                  color: Colors.teal,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              headerStyle: const HeaderStyle(
+                                formatButtonVisible: false,
+                                titleCentered: true,
+                                titleTextStyle: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              onDaySelected: (selectedDay, focusedDay) {
+                                setState(() {
+                                  _selectedDay = selectedDay;
+                                  _focusedDay = focusedDay;
+                                });
+
+                                final events = _events[DateTime(
+                                        selectedDay.year, selectedDay.month, selectedDay.day)] ??
+                                    [];
+
+                                if (events.isNotEmpty) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: Text(
+                                          "📌 Kegiatan ${selectedDay.day}-${selectedDay.month}-${selectedDay.year}"),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: events
+                                            .map((e) => ListTile(
+                                                  leading: const Icon(Icons.event_note,
+                                                      color: Colors.teal),
+                                                  title: Text(e),
+                                                ))
+                                            .toList(),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text("Tutup"),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // 📋 Jadwal
+                      const Text(
+                        "📅 Jadwal Pemeriksaan & Kegiatan",
+                        style:
+                            TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal),
+                      ),
+                      const SizedBox(height: 10),
+                      _loadingSchedule
+                          ? const Center(child: CircularProgressIndicator())
+                          : Column(
+                              children: _schedule.map((item) {
+                                final date = DateTime.parse(item["tanggal"]);
+                                final isDone = date.isBefore(DateTime.now()) ||
+                                    date.isAtSameMomentAs(DateTime.now());
+                                return Card(
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  margin: const EdgeInsets.symmetric(vertical: 6),
+                                  elevation: 2,
+                                  child: ListTile(
+                                    leading: Icon(
+                                      isDone ? Icons.check_circle : Icons.pending_actions,
+                                      color: isDone ? Colors.teal : Colors.orange,
+                                      size: 30,
+                                    ),
+                                    title: Text(item["kegiatan"],
+                                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    subtitle: Text(
+                                      item["tanggal"],
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
     );
   }
 }

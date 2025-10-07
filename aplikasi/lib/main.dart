@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // ✅ wajib
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:animations/animations.dart';
 
 import 'login_page.dart';
@@ -8,6 +8,7 @@ import 'register_page.dart';
 import 'home_page.dart';
 import 'maps_page.dart';
 import 'calendar_page.dart';
+import 'profile_page.dart'; // ✅ gunakan file profile_page.dart kamu yang dinamis
 
 void main() {
   runApp(const MyApp());
@@ -26,16 +27,15 @@ class MyApp extends StatelessWidget {
         fontFamily: "Roboto",
         scaffoldBackgroundColor: Colors.white,
       ),
-
-      // ✅ tambahkan localization agar datepicker & material widgets support
+      // ✅ Tambahan untuk localization
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
-        Locale("id", "ID"), // Bahasa Indonesia
-        Locale("en", "US"), // fallback Inggris
+        Locale("id", "ID"),
+        Locale("en", "US"),
       ],
 
       initialRoute: "/",
@@ -43,6 +43,7 @@ class MyApp extends StatelessWidget {
         "/": (ctx) => const SplashScreen(),
         "/login": (ctx) => const LoginPage(),
         "/register": (ctx) => const RegisterPage(),
+        "/main": (ctx) => const MainScreen(userId: 1), // 🔧 contoh default
       },
     );
   }
@@ -124,9 +125,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-/// MainScreen dengan bottom nav + transition
+/// ✅ Halaman utama dengan navigasi bawah
 class MainScreen extends StatefulWidget {
-  final int userId; // diterima dari LoginPage
+  final int userId;
   const MainScreen({super.key, required this.userId});
 
   @override
@@ -135,7 +136,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-
   late final List<Widget> _pages;
 
   @override
@@ -144,11 +144,14 @@ class _MainScreenState extends State<MainScreen> {
     _pages = [
       HomePage(key: const PageStorageKey("home"), userId: widget.userId),
       const MapsPage(key: PageStorageKey("maps")),
-      CalendarPage( // ✅ userId diteruskan
+      CalendarPage(
         key: const PageStorageKey("calendar"),
         userId: widget.userId,
       ),
-      const NotificationPage(key: PageStorageKey("notif")),
+      ProfilePage(
+        key: const PageStorageKey("profile"),
+        userId: widget.userId,
+      ), // ✅ gunakan ProfilePage dari file profile_page.dart
     ];
   }
 
@@ -193,9 +196,9 @@ class _MainScreenState extends State<MainScreen> {
                   Icons.home,
                   Icons.location_on,
                   Icons.calendar_month,
-                  Icons.notifications
+                  Icons.person,
                 ];
-                final labels = ["Home", "Maps", "Kalender", "Notif"];
+                final labels = ["Home", "Maps", "Kalender", "Profile"];
                 final isSelected = _currentIndex == index;
 
                 return GestureDetector(
@@ -243,15 +246,5 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
-  }
-}
-
-/// Placeholder NotificationPage
-class NotificationPage extends StatelessWidget {
-  const NotificationPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text("🔔 Notifikasi"));
   }
 }

@@ -27,8 +27,8 @@ def register(user: dict):
                 user.get("height", 0),
                 user.get("bloodPressure", ""),
                 user.get("heartRate", 0),
-                user.get("hptp", ""),     # ✅ simpan HPHT
-                user.get("dueDate", "")   # ✅ opsional
+                user.get("hptp") or None,   # Kalau kosong jadi NULL
+                user.get("dueDate") or None
             )
         )
         conn.commit()
@@ -52,13 +52,3 @@ def login(user: dict):
         return dict(row)
     raise HTTPException(status_code=401, detail="Email atau password salah")
 
-
-# 📌 Ambil profile user (termasuk HPHT & dueDate)
-@router.get("/profile/{user_id}")
-def get_profile(user_id: int):
-    conn = get_db_connection()
-    row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    conn.close()
-    if row:
-        return dict(row)   # ✅ otomatis return semua kolom, termasuk hptp
-    raise HTTPException(status_code=404, detail="User tidak ditemukan")
