@@ -63,7 +63,7 @@ class _MapScreenState extends State<MapScreen> {
 
       final double dist = data["dist_km"];
       final double destLat = data["dest"]["lat"];
-      final double destLon = data["dest"]["lon"];
+      final cdouble destLon = data["dest"]["lon"];
       final List<dynamic> route = data["path"];
 
       final LatLng dest = LatLng(destLat, destLon);
